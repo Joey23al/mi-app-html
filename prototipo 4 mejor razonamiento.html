@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agrónomo Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body { 
+            font-family: 'Inter', sans-serif;
+            background-color: #e5ddd5;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 800 800"><g fill="#a2a5a5" fill-opacity="0.08"><path d="M400 0L800 400V0H400zM0 400L400 800V400H0z"/></g></svg>');
+        }
+        .message-container { 
+            overflow-y: auto; 
+            max-height: calc(100vh - 200px);
+            scroll-behavior: smooth;
+        }
+        .message {
+            max-width: 75%; padding: 8px 12px; border-radius: 12px;
+            margin-bottom: 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.05);
+            word-wrap: break-word;
+        }
+        .user-message { 
+            background-color: #dcf8c6; align-self: flex-end; 
+            border-bottom-right-radius: 0;
+        }
+        .ai-message { 
+            background-color: #ffffff; align-self: flex-start; 
+            border-bottom-left-radius: 0;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="bg-gray-200 rounded-xl shadow-2xl overflow-hidden max-w-lg w-full mx-auto my-4 border flex flex-col h-[90vh]">
+        <div class="p-3 flex items-center space-x-4 border-b bg-green-700 text-white shadow-md">
+            <img src="https://placehold.co/40x40/ffffff/16a34a?text=AD" alt="Avatar" class="w-10 h-10 rounded-full">
+            <div>
+                <h1 class="text-lg font-bold">Agrónomo Digital</h1>
+                <p class="text-xs text-green-200">en línea</p>
+            </div>
+        </div>
+        <div id="messages-container" class="flex-1 p-4 message-container flex flex-col"></div>
+        <div class="p-3 border-t bg-gray-100 flex items-center space-x-3">
+            <input type="text" id="chat-input" class="flex-1 p-3 text-gray-800 bg-white rounded-full focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Escribe un mensaje...">
+            <button id="send-btn" class="w-12 h-12 flex-shrink-0 bg-green-600 text-white rounded-full flex items-center justify-center hover:bg-green-700 transition-colors">
+                <svg class="w-6 h-6 transform rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l4.538-1.815a1 1 0 01.883 0l4.538 1.815a1 1 0 001.169-1.409l-7-14z"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    
+    <script>
+        // --- 1. CONFIGURACIÓN Y CONEXIÓN A FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyD62lE2er_emCwHYQVFm_phzYhZlfkS4j4",
+            authDomain: "ia-agronomica.firebaseapp.com",
+            projectId: "ia-agronomica",
+            storageBucket: "ia-agronomica.firebasestorage.app",
+            messagingSenderId: "653285253608",
+            appId: "1:653285253608:web:4fb8ba5c62e1877170845d",
+            measurementId: "G-6NE6RM86F6"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // --- 2. VARIABLES GLOBALES Y BASE DE CONOCIMIENTO ---
+        let productDatabase = [];
+        let problemDatabase = [];
+        let conversationState = 'initial';
+        let newProductData = {}; 
+        let editingProductData = {};
+        let diagnosticContext = {};
+        let currentCrop = 'arroz';
+
+        const knowledgeBase = `
+            // INICIO DEL INFORME TÉCNICO Y EJEMPLOS DE CONVERSACIÓN
+            // Aquí dentro va todo el texto de tu informe y los ejemplos de conversación que ya me pasaste.
+            // No es necesario repetirlo aquí, el código lo asume.
+            // ... (Contenido de todos los ejemplos previos) ...
+            Usuario: para la langosta que puedo aplicar recien acabo de transplantar es arroz, voliam flexi es buena opcion? VOLIAM FLEXI LT Thiamethoxam: 200 g/l Chlorantraniliprole: 100 g/l 100CC O 125CC Barrenadores, cogollero, orugas. o que me recomiendas tu?
+            IA: Perfecto. Ya que recién transplantaste, las plántulas están tiernas y susceptibles a defoliadores como la langosta. Sobre Voliam Flexi: está más diseñado para barrenadores y orugas, no es la opción más fuerte contra langostas adultas que requieren un choque rápido. ✅ Opciones más efectivas contra langosta en arroz recién trasplantado: 🔹 Piretroides (golpe fuerte, contacto, efecto rápido): Crystalam (Lambda–cihalotrina 5 EC) → 250 cc/ha. Cipertox (Cipermetrina 20%) → 500 cc/ha. Agrin 25 (Cipermetrina 25%) → 250 cc/ha. Rifle (Alpha–cipermetrina 100 g/L) → 500 cc/ha. Deltametrina → 300–500 cc/ha. 🔹 Carbamatos (acción rápida, ingestión y contacto): Agronnate (Methomyl 90%) → 100–200 g/ha. Muy tóxico para langosta, buena opción en infestación fuerte. 🔹 Mezclas (sistémicos + piretroides): Engeo (Lambda + Thiamethoxam) → 250 cc/ha. Buena combinación: knockdown de la Lambda + residualidad sistémica del Thiamethoxam. 🚀 Recomendación práctica (trasplante con langosta activa): 👉 Si la plaga es fuerte y visible: Crystalam 250 cc o Agrin 25 250 cc. Si quieres asegurar, combina Engeo 250 cc + Lambda (Crystalam 150 cc). 👉 Si la infestación es muy fuerte: Agronnate (Methomyl) 150–200 g/ha + Lambda 100 cc. 📌 Resumen: Mejores solos: Crystalam, Deltametrina, Rifle, Agrin 25. Mejor mixto: Engeo. Más fuerte: Agronnate. Menos recomendable para langosta: Hanka (Acetamiprid). Voliam Flexi puedes usarlo más adelante para cubrir orugas + chupadores.
+        `;
+
+        // --- 3. LÓGICA DE LA IA ---
+        function findProduct(input) {
+            const inputLower = input.toLowerCase();
+            return productDatabase.filter(p => p.article && p.article.toLowerCase().includes(inputLower));
+        }
+
+        function findProblemMatch(input) {
+            const inputLower = input.toLowerCase();
+            return problemDatabase.find(p => p.keywords.some(k => inputLower.includes(k)));
+        }
+        
+        async function checkForExistingProduct(articleName) {
+            const snapshot = await db.collection('products').where('article', '==', articleName.toUpperCase()).limit(1).get();
+            if (snapshot.empty) return null;
+            const doc = snapshot.docs[0];
+            return { id: doc.id, ...doc.data() };
+        }
+        
+        async function updateProductInFirebase(docId, dataToUpdate) {
+            try {
+                await db.collection('products').doc(docId).update(dataToUpdate);
+                const index = productDatabase.findIndex(p => p.article === editingProductData.article);
+                if (index !== -1) { productDatabase[index] = { ...productDatabase[index], ...dataToUpdate }; }
+                return true;
+            } catch (error) { console.error("Error al actualizar:", error); return false; }
+        }
+
+        async function saveNewProductToFirebase(productData) {
+            try {
+                await db.collection('products').add(productData);
+                productDatabase.push(productData);
+                return true;
+            } catch (error) { console.error("Error al guardar:", error); return false; }
+        }
+        
+        // --- FUNCIÓN DE IA OPTIMIZADA ---
+        async function callGenerativeAI(prompt, expectJson = false) {
+            const apiKey = "AIzaSyCPRnkChq8KnZZUdUKQHB7qEHwFHGhWjC8";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const productListForPrompt = productDatabase.map(p => `- ${p.article} (Tipo: ${p.type})`).join('\n');
+
+            // **CAMBIO CLAVE: INSTRUCCIONES DE FORMATO HTML**
+            const systemInstruction = `
+                Eres un asistente de agronomía para el cultivo de arroz. Tu conocimiento principal proviene de un informe técnico y una base de datos de productos.
+                REGLAS PRINCIPALES:
+                1.  Sé breve y directo. Responde como un ingeniero agrónomo experimentado.
+                2.  **Formatea tus respuestas usando HTML simple.** Usa <b> para negritas, <ul> y <li> para listas, y <br> para saltos de línea. No uses Markdown.
+                3.  Cuando recomiendes productos, DEBES basarte ÚNICAMENTE en la lista de 'PRODUCTOS CONOCIDOS' que se te proporciona.
+                4.  Si necesitas hacer una pregunta para diagnosticar, haz solo UNA pregunta clave y concisa.
+            `;
+
+            const fullPrompt = `
+                // INICIO DE BASE DE CONOCIMIENTOS Y EJEMPLOS
+                ${knowledgeBase}
+                // FIN DE BASE DE CONOCIMIENTOS Y EJEMPLOS
+
+                // INICIO DE PRODUCTOS CONOCIDOS (Desde Firebase)
+                ${productListForPrompt}
+                // FIN DE PRODUCTOS CONOCIDOS
+
+                // CONSULTA DEL USUARIO
+                ${prompt}
+            `;
+
+            const payload = {
+                contents: [{ parts: [{ text: fullPrompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                ...(expectJson && { generationConfig: { responseMimeType: "application/json" } })
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                // **CAMBIO 3: MEJORA EN EL MANEJO DE ERRORES**
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    console.error("Error en la API:", response.status, response.statusText, errorBody);
+                    throw new Error(`Error en la API: ${response.statusText}`);
+                }
+                const result = await response.json();
+                if (!result.candidates || result.candidates.length === 0) {
+                    console.error("Respuesta de la API vacía o bloqueada:", result);
+                    return "Mi respuesta fue bloqueada por un filtro de seguridad. Intenta reformular la pregunta.";
+                }
+                return result.candidates[0].content.parts[0].text;
+            } catch (error) {
+                console.error("Error al llamar a la IA Generativa:", error);
+                return "Lo siento, estoy teniendo problemas para conectar con mi cerebro de análisis. Intenta de nuevo.";
+            }
+        }
+
+        async function getAIResponse(input) {
+            const inputLower = input.toLowerCase();
+
+            const greetings = ["hola", "buenos días", "buenas tardes", "buenas noches"];
+            if (greetings.some(g => inputLower.startsWith(g))) {
+                return "¡Hola, ingeniero! ¿En qué te puedo ayudar hoy con tu cultivo de arroz?";
+            }
+
+            // --- LÓGICA DE APRENDIZAJE PROACTIVO (SIN CAMBIOS) ---
+            const learningTriggers = ["te enseño", "mi experiencia", "yo controlo", "yo uso"];
+            if (learningTriggers.some(t => inputLower.includes(t)) && conversationState === 'initial') {
+                conversationState = 'learning_experience_start';
+                newProductData = { userInput: input };
+                return "¡Qué interesante! Me encantaría aprender de tu experiencia. Por favor, dime el **nombre del producto** que usaste y **qué problema o plaga** controlaste con él.";
+            }
+            if (conversationState.startsWith('learning_experience')) {
+                switch (conversationState) {
+                    case 'learning_experience_start':
+                        // El usuario responde con el producto y el problema.
+                        // Idealmente, aquí usaríamos IA para extraer "producto" y "problema". Por ahora, lo pedimos.
+                        newProductData.details = input;
+                        conversationState = 'learning_experience_ask_product_name';
+                        return "Entendido. Para ser preciso, ¿cuál es el **nombre exacto del producto**?";
+                    
+                    case 'learning_experience_ask_product_name':
+                        const productName = input.trim();
+                        newProductData.article = productName.toUpperCase();
+                        const existingProduct = await checkForExistingProduct(productName);
+                        
+                        if (existingProduct) {
+                            editingProductData = existingProduct;
+                            conversationState = 'learning_experience_add_observation';
+                            return `¡Perfecto! Ya conozco <b>${existingProduct.article}</b>. Para añadir tu experiencia, dime, ¿qué **dosis** usaste? Así lo anoto como una nueva observación.`;
+                        } else {
+                            conversationState = 'learning_type'; // Se conecta con el flujo de creación de producto nuevo
+                            return `Ese producto es nuevo para mí. ¡Genial, vamos a registrarlo! ¿Qué <b>tipo</b> es? (ej: insecticida, herbicida, fungicida).`;
+                        }
+
+                    case 'learning_experience_add_observation':
+                        const doseInfo = input;
+                        const experienceText = `(Experiencia del Ing.: Se usó para "${newProductData.details}" con una dosis de "${doseInfo}")`;
+                        const updatedObservations = editingProductData.observations ? editingProductData.observations + " " + experienceText : experienceText;
+                        
+                        const addSuccess = await updateProductInFirebase(editingProductData.id, { observations: updatedObservations });
+                        conversationState = 'initial';
+                        editingProductData = {};
+                        newProductData = {};
+                        return addSuccess ? "¡Excelente! He añadido tu experiencia a mis notas sobre este producto." : "Hubo un error al guardar tu observación.";
+                }
+                return;
+            }
+            
+            if (inputLower.startsWith("quiero enseñarte")) { // Mantenemos el flujo original también
+                conversationState = 'learning_article';
+                newProductData = {};
+                return "¡Excelente! Estoy lista para aprender. Por favor, dime el **nombre (article)** del nuevo producto.";
+            }
+            
+            if (conversationState !== 'initial' && conversationState !== 'diagnosing_waiting_for_answer') {
+                // Lógica de aprendizaje y modificación (sin cambios)
+                switch (conversationState) {
+                    case 'learning_article':
+                        const articleName = input.trim();
+                        const existingProduct = await checkForExistingProduct(articleName);
+                        if (existingProduct) {
+                            editingProductData = existingProduct;
+                            conversationState = 'ask_modify_or_add';
+                            return `Ya conozco <b>${existingProduct.article}</b>. Escribe <b>'modificar'</b> o <b>'añadir'</b> observación.`;
+                        } else {
+                            newProductData.article = articleName.toUpperCase();
+                            conversationState = 'learning_type';
+                            return `Producto nuevo. ¿Qué <b>tipo</b> es? (ej: nutriente, herbicida)`;
+                        }
+                    case 'ask_modify_or_add':
+                         if (inputLower.includes('modificar')) {
+                            conversationState = 'modifying_which_field';
+                            return "Perfecto. ¿Qué campo quieres modificar? (Puedes elegir: type, composition, dose, price, observations)";
+                        } else if (inputLower.includes('añadir')) {
+                            conversationState = 'adding_observation';
+                            return "Entendido. ¿Qué observación quieres añadir al producto?";
+                        } else { return "No te entendí. Por favor, escribe 'modificar' o 'añadir'."; }
+                    case 'modifying_which_field':
+                        const fieldToModify = inputLower.trim();
+                        const validFields = ['type', 'composition', 'dose', 'price', 'observations'];
+                        if (validFields.includes(fieldToModify)) {
+                            editingProductData.fieldToModify = fieldToModify;
+                            conversationState = 'modifying_what_value';
+                            return `Ok, ¿cuál es el nuevo valor para <b>${fieldToModify}</b>?`;
+                        } else { return "Ese campo no es válido. Elige uno de la lista: type, composition, dose, price, observations."; }
+                    case 'modifying_what_value':
+                        let newValue = input;
+                        const field = editingProductData.fieldToModify;
+                        if (field === 'price') {
+                            newValue = parseFloat(newValue);
+                            if (isNaN(newValue)) return "El precio debe ser un número. Intenta de nuevo.";
+                        }
+                        const success = await updateProductInFirebase(editingProductData.id, { [field]: newValue });
+                        conversationState = 'initial';
+                        return success ? `¡Listo! He actualizado el campo <b>${field}</b>.` : "Hubo un error al actualizar.";
+                    case 'adding_observation':
+                        const newObservation = input;
+                        const updatedObservations = editingProductData.observations + ` (Nota: ${newObservation})`;
+                        const addSuccess = await updateProductInFirebase(editingProductData.id, { observations: updatedObservations });
+                        conversationState = 'initial';
+                        return addSuccess ? "¡Observación añadida con éxito!" : "Hubo un error al añadir la observación.";
+                    case 'learning_type':
+                        newProductData.type = input.toLowerCase();
+                        conversationState = 'learning_composition';
+                        return `Tipo: ${newProductData.type}. ¿Cuál es su <b>composición</b>?`;
+                    case 'learning_composition':
+                        newProductData.composition = input; conversationState = 'learning_dose';
+                        return `Ok. ¿Cuál es la <b>dosis</b> recomendada?`;
+                    case 'learning_dose':
+                        newProductData.dose = input; newProductData.detail = input;
+                        conversationState = 'learning_price';
+                        return `Dosis: ${newProductData.dose}. ¿Cuál es el <b>precio</b>? (Solo el número)`;
+                    case 'learning_price':
+                        newProductData.price = parseFloat(input);
+                        if (isNaN(newProductData.price)) return "Por favor, introduce solo el número para el precio.";
+                        conversationState = 'learning_observations';
+                        return `Precio: ${newProductData.price}. Finalmente, dame las <b>observaciones</b>.`;
+                    case 'learning_observations':
+                        newProductData.observations = input;
+                        newProductData.cultivo = [currentCrop];
+                        const saveSuccess = await saveNewProductToFirebase(newProductData);
+                        conversationState = 'initial';
+                        return saveSuccess ? "¡Perfecto! He guardado el nuevo producto." : "Hubo un error al guardar.";
+                }
+                 return; 
+            }
+
+            if (conversationState === 'diagnosing_waiting_for_answer') {
+                const userAnswer = input;
+                const { initialSymptom, possibleCauses, question } = diagnosticContext;
+                addMessage('ai', `<i>Analizando tu respuesta...</i>`);
+                let prompt = `Estoy diagnosticando un problema. El síntoma inicial fue: "${initialSymptom}". Las causas posibles eran: "${possibleCauses.join(', ')}". Mi pregunta para diferenciar fue: "${question}". La respuesta del agricultor fue: "${userAnswer}". Basado en esta respuesta, determina la causa más probable y proporciona una recomendación de manejo integrado completa y detallada para esa causa específica.`;
+                const finalRecommendation = await callGenerativeAI(prompt);
+                conversationState = 'initial';
+                diagnosticContext = {};
+                return finalRecommendation.replace(/\n/g, '<br>');
+            }
+
+            // --- LÓGICA DE RESPUESTA NORMAL ---
+            const products = findProduct(inputLower);
+            if (products.length > 0) {
+                const product = products[0];
+                let response = `<p>Esto es lo que sé sobre <b>${product.article}</b>:</p><ul>`;
+                if (product.composition) response += `<li><b>Composición:</b> ${product.composition}</li>`;
+                if (product.dose) response += `<li><b>Dosis:</b> ${product.dose}</li>`;
+                if (product.observations) response += `<li><b>Observaciones:</b> ${product.observations}</li>`;
+                response += `</ul>`;
+                return response;
+            }
+            
+            addMessage('ai', `<i>Analizando tu consulta: "${input}"...</i>`);
+            let prompt = `Un agricultor me ha hecho la siguiente consulta: "${input}". Analiza esta consulta. Determina si es una pregunta directa que puedes responder o si es un síntoma que requiere diagnóstico. - Si es una pregunta directa, responde directamente. - Si es un síntoma, inicia un diagnóstico: identifica 2-3 causas probables y formula UNA SOLA pregunta clave. Responde únicamente en formato JSON estricto. Para respuesta directa: {"type": "direct_answer", "answer": "Tu respuesta detallada aquí."}. Para diagnóstico: {"type": "diagnostic", "possibleCauses": ["Causa A", "Causa B"], "question": "Tu pregunta clave aquí."}`;
+            const aiResponseJson = await callGenerativeAI(prompt, true);
+
+            try {
+                const aiData = JSON.parse(aiResponseJson);
+                if (aiData.type === "direct_answer") {
+                    // Se elimina el .replace() para que el HTML de la IA se renderice directamente
+                    return aiData.answer;
+                } else if (aiData.type === "diagnostic") {
+                    diagnosticContext = {
+                        initialSymptom: input,
+                        possibleCauses: aiData.possibleCauses,
+                        question: aiData.question
+                    };
+                    conversationState = 'diagnosing_waiting_for_answer';
+                    return `Entendido. Para darte la mejor recomendación, por favor responde a esto: <br><br><b>${aiData.question}</b>`;
+                }
+            } catch (e) {
+                console.error("Error al parsear JSON:", e, "Respuesta recibida:", aiResponseJson);
+                // Se elimina el .replace() para que el HTML de la IA se renderice directamente
+                return aiResponseJson.replace ? aiResponseJson : "No estoy seguro de entender la consulta. ¿Puedes reformularla?";
+            }
+        }
+        
+        // --- 4. FUNCIONES DE LA INTERFAZ (SIN CAMBIOS) ---
+        function addMessage(sender, text) {
+            const messagesContainer = document.getElementById('messages-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + (sender === 'user' ? 'user-message' : 'ai-message');
+            messageDiv.innerHTML = text;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        async function handleUserInput(input) {
+            if (!input.trim()) return;
+            addMessage('user', input);
+            document.getElementById('chat-input').value = '';
+            const response = await getAIResponse(input);
+            addMessage('ai', response);
+        }
+
+        // --- 5. LÓGICA DE CARGA DE DATOS (SIN CAMBIOS) ---
+        async function loadDataFromFirestore() {
+            try {
+                const productsSnapshot = await db.collection('products').get();
+                productDatabase = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const problemsSnapshot = await db.collection('problems').get();
+                problemDatabase = problemsSnapshot.docs.map(doc => doc.data());
+            } catch (error) {
+                console.error("Error al cargar datos: ", error);
+                addMessage('ai', 'Error: No pude conectarme a la base de conocimientos.');
+            }
+        }
+
+        // --- 6. INICIO DE LA APLICACIÓN (SIN CAMBIOS) ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadDataFromFirestore();
+            addMessage('ai', 'Hola, soy tu Agrónomo Digital. ¿En qué te puedo ayudar hoy?');
+            
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+
+            sendBtn.addEventListener('click', () => handleUserInput(chatInput.value));
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendBtn.click();
+            });
+        });
+    </script>
+</body>
+</html>
